@@ -124,31 +124,62 @@ update_database_entry() {
     local NEW_APPIMAGE_PATH="$2"
     local NEW_DESKTOP_FILE_PATH="$3"
     local NEW_ICON_PATH="$4"
+    verbose "Updating database entry for '$APP_NAME'."
 
     # Use temporary file for updating
-    tmp_file=$(mktemp)
-    while IFS='|' read -r NAME PATH DESKTOP ICON; do
+    tmp_file=$(mktemp) || error_exit "Failed to create temporary file in update_database_entry."
+    # touch "$tmp_file" || error_exit "Failed to initialize temporary file."
+
+    entry_found=false
+    while IFS='|' read -r NAME APP_PATH DESKTOP ICON; do
         if [ "$NAME" == "$APP_NAME" ]; then
             echo "$APP_NAME|$NEW_APPIMAGE_PATH|$NEW_DESKTOP_FILE_PATH|$NEW_ICON_PATH" >> "$tmp_file"
-        else
-            echo "$NAME|$PATH|$DESKTOP|$ICON" >> "$tmp_file"
+            entry_found=true
+            verbose "Entry '$APP_NAME' found and updated."
+        elif [ -n "$NAME" ]; then
+            echo "$NAME|$APP_PATH|$DESKTOP|$ICON" >> "$tmp_file"
         fi
     done < "$DATABASE_FILE"
-    mv "$tmp_file" "$DATABASE_FILE"
+
+    if [ "$entry_found" = false ]; then
+        error_exit "Entry '$APP_NAME' not found in the database."
+    fi
+
+    mv "$tmp_file" "$DATABASE_FILE" || error_exit "Failed to update database file in update_database_entry."
+    verbose "Database file updated successfully."
 }
 
 # Function to remove an entry from the database
 remove_from_database() {
     local APP_NAME="$1"
-    # Use temporary file for updating
-    tmp_file=$(mktemp)
-    while IFS='|' read -r NAME PATH DESKTOP ICON; do
-        if [ "$NAME" != "$APP_NAME" ]; then
-            echo "$NAME|$PATH|$DESKTOP|$ICON" >> "$tmp_file"
+    verbose "Removing '$APP_NAME' from the database."
+
+    # Use mktemp without a directory path to ensure it creates a file
+    tmp_file=$(mktemp) || error_exit "Failed to create temporary file in remove_from_database."
+
+    entry_found=false
+    while IFS='|' read -r NAME APP_PATH DESKTOP ICON; do
+        if [ "$NAME" != "$APP_NAME" ] && [ -n "$NAME" ]; then
+            echo "$NAME|$APP_PATH|$DESKTOP|$ICON" >> "$tmp_file"
+        else
+            entry_found=true
+            verbose "Entry '$APP_NAME' found and will be removed."
         fi
     done < "$DATABASE_FILE"
-    mv "$tmp_file" "$DATABASE_FILE"
+
+    if [ "$entry_found" = false ]; then
+        error_exit "Entry '$APP_NAME' not found in the database."
+    fi
+
+    verbose "tmp_file is '$tmp_file'"
+    verbose "DATABASE_FILE is '$DATABASE_FILE'"
+    ls -l "$tmp_file" "$DATABASE_FILE" || verbose "One of the files does not exist."
+    cat "$tmp_file"
+
+    mv "$tmp_file" "$DATABASE_FILE" || error_exit "Failed to update database file in remove_from_database."
+    verbose "Database file updated successfully."
 }
+
 
 # Function to list managed AppImages
 list_appimages() {
@@ -402,6 +433,9 @@ edit_appimage() {
     verbose "SELECTED_APPIMAGE_PATH: $SELECTED_APPIMAGE_PATH"
     verbose "SELECTED_DESKTOP_FILE_PATH: $SELECTED_DESKTOP_FILE_PATH"
     verbose "SELECTED_ICON_PATH: $SELECTED_ICON_PATH"
+
+    # Store the old application name before any changes
+    OLD_APP_NAME="$SELECTED_APP_NAME"
 
     # Check if the selected AppImage still exists
     if [ ! -f "$SELECTED_APPIMAGE_PATH" ]; then
@@ -682,7 +716,7 @@ edit_appimage() {
     fi
 
     # If the application name has changed, rename AppImage and .desktop file, and update database
-    if [ "$APP_NAME_TO_SAVE" != "$SELECTED_APP_NAME" ]; then
+    if [ "$APP_NAME_TO_SAVE" != "$OLD_APP_NAME" ]; then
         # Rename AppImage file
         OLD_APPIMAGE_PATH="$SELECTED_APPIMAGE_PATH"
         NEW_APPIMAGE_PATH="$DEFAULT_DEST_DIR/${APP_NAME_TO_SAVE}.AppImage"
@@ -695,11 +729,11 @@ edit_appimage() {
         # Update Exec path in .desktop file
         sed -i "s|^Exec=.*|Exec=\"$EXEC_TO_SAVE\" %U|" "$DESKTOP_TO_SAVE"
         verbose "Updated Exec path in .desktop file."
-        # Remove old database entry and update with new name
-        remove_from_database "$SELECTED_APP_NAME"
+        # Remove old database entry and add the new one
+        remove_from_database "$OLD_APP_NAME"
 
-        # Update the database entry with the new name and path
-        update_database_entry "$APP_NAME_TO_SAVE" "$EXEC_TO_SAVE" "$DESKTOP_TO_SAVE" "$ICON_TO_SAVE"
+        # **Add the new entry to the database**
+        save_to_database "$APP_NAME_TO_SAVE" "$EXEC_TO_SAVE" "$DESKTOP_TO_SAVE" "$ICON_TO_SAVE"
     else
         # If app name hasn't changed, just update the database entry
         update_database_entry "$APP_NAME_TO_SAVE" "$EXEC_TO_SAVE" "$DESKTOP_TO_SAVE" "$ICON_TO_SAVE"
@@ -710,6 +744,7 @@ edit_appimage() {
 
     verbose "Edit operation completed successfully."
 }
+
 
 
 # Function to update an AppImage version
@@ -843,7 +878,7 @@ delete_appimage() {
 
     # Select an AppImage
     select_appimage || error_exit "No AppImages available to delete."
-    IFS=, read -r SELECTED_APPIMAGE_PATH SELECTED_DESKTOP_FILE_PATH SELECTED_ICON_PATH <<< "$SELECTED_APP_INFO"
+    IFS='|' read -r SELECTED_APPIMAGE_PATH SELECTED_DESKTOP_FILE_PATH SELECTED_ICON_PATH <<< "$SELECTED_APP_INFO"
 
     verbose "Selected AppImage: $SELECTED_APP_NAME"
 
@@ -927,23 +962,23 @@ main() {
         case "$MENU_CHOICE" in
             1)
                 add_appimage
-		load_database
+		        load_database
                 ;;
             2)
                 edit_appimage
-		load_database
+		        load_database
                 ;;
             3)
                 update_appimage
-		load_database
+		        load_database
                 ;;
             4)
                 delete_appimage
-		load_database
+		        load_database
                 ;;
             5)
                 rescan_system
-		load_database
+		        load_database
                 ;;
             6)
                 echo "Exiting AppImage Manager. Goodbye!"
@@ -953,7 +988,7 @@ main() {
                 echo "Invalid choice. Please enter a number between 1 and 6."
                 ;;
         esac
-	load_database
+	    load_database
         echo ""
     done
 }
