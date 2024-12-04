@@ -29,13 +29,13 @@ AppImage Manager simplifies the management of AppImage files by providing an int
 3. **Make the Script Executable**:
 
    ~~~bash
-   chmod +x handle_appimage.sh
+   chmod +x appimg
    ~~~
 
 4. **Move the Script to a Directory in Your PATH** (e.g., `/usr/local/bin`):
 
    ~~~bash
-   sudo mv handle_appimage.sh /usr/local/bin/appimage-manager
+   sudo mv appimg /usr/local/bin
    ~~~
 
    > **Note**: You may need to enter your password for `sudo`.
@@ -43,7 +43,7 @@ AppImage Manager simplifies the management of AppImage files by providing an int
 5. **Verify Installation**:
 
    ~~~bash
-   appimage-manager
+   appimg
    ~~~
 
 ## Usage
@@ -51,7 +51,7 @@ AppImage Manager simplifies the management of AppImage files by providing an int
 Run the script by typing:
 
 ~~~bash
-appimage-manager
+appimg
 ~~~
 
 You will be presented with a menu of options:
